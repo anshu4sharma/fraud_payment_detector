@@ -1,6 +1,9 @@
 package repository
 
 import (
+	"fmt"
+	"log"
+
 	"github.com/anshu4sharma/fraud_payment_detector/pkg/redis"
 	"github.com/anshu4sharma/fraud_payment_detector/pkg/utils"
 	"github.com/gofiber/fiber/v2"
@@ -20,8 +23,10 @@ func NewRedisPaymentRepository(client *redis.RedisClient, logger *utils.Logger) 
 }
 
 func (r *RedisPaymentRepository) InsertPayment(ctx *fiber.Ctx, id string) (string, error) {
-	r.client.Set(ctx.Context(), "hello", "anshu", 0)
-	r.logger.Infof("Fetching user with ID %s from Redis", id)
-	r.logger.Warnf("Fetching user with ID %s from Redis", id)
+	paymentKey := fmt.Sprintf("payments-%s", id)
+	err := r.client.LPush(ctx.Context(), paymentKey).Err()
+	if err != nil {
+		log.Fatal(err)
+	}
 	return id, nil
 }

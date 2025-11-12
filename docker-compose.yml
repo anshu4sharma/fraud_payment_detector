@@ -4,7 +4,7 @@ services:
     image: apache/kafka:4.0.0
     container_name: kafka
     ports:
-      - "9092:9092"
+      - "9092:9092"  # broker port for producer/consumer
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -19,8 +19,6 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
     volumes:
       - kafka-data:/var/lib/kafka/data
-    networks:
-      - app_network
 
   # Kafka UI
   kafka-ui:
@@ -31,8 +29,6 @@ services:
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
-    networks:
-      - app_network
 
   # Redis
   redis:
@@ -40,15 +36,9 @@ services:
     container_name: redis
     ports:
       - "6379:6379"
-    networks:
-      - app_network
     volumes:
       - redis-data:/data
 
 volumes:
   kafka-data:
   redis-data:
-
-networks:
-  app_network:
-    driver: bridge
