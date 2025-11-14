@@ -53,7 +53,7 @@ func main() {
 	})
 	app.Use(recover.New())
 
-	handlers, err := bootstrap.InitializeApp(redisClient, logger)
+	handlers, err := bootstrap.InitializeApp(redisClient, logger ,kafkaClient)
 	if err != nil {
 		logger.Errorf("Failed to initialize app: %v", err)
 		os.Exit(1)

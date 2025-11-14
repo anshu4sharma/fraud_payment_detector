@@ -19,7 +19,7 @@ func NewPaymentHandler(service *services.PaymentService, logger *utils.Logger) *
 func (h *PaymentHandler) InsertPayment(c *fiber.Ctx) error {
 	req := c.Locals("validated_body").(structs.PaymentReq)
 
-	_, err := h.service.InsertPayment(c, req.ID)
+	_, err := h.service.InsertPayment(c, req)
 	if err != nil {
 		h.logger.Errorf("Failed to insert payment: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
