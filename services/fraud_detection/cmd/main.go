@@ -35,7 +35,6 @@ func main() {
 		logger.Errorf("Failed to connect Kafka producer: %v", err)
 		os.Exit(1)
 	}
-	defer kafkaClient.Close()
 
 	if err := kafkaClient.ConnectConsumer(cfg.KafkaBrokers, cfg.KafkaGroupID, []string{constant.PaymentTopic}); err != nil {
 		logger.Errorf("Failed to connect Kafka consumer: %v", err)
