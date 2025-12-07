@@ -1,1 +1,6 @@
 .env
+*.log
+
+# Logs directories anywhere (recursive)
+**/logs/
+**/log/
