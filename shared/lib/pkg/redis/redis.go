@@ -7,19 +7,24 @@ import (
 
 	"github.com/anshu4sharma/fraud_payment_detector/shared/lib/pkg/utils"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 type RedisClient struct {
-	*redis.Client // Embedded redis.Client for full method access
-	logger        *utils.Logger
-	isReady       bool
+	*redis.Client
+	logger  *utils.Logger
+	isReady bool
 }
 
 // NewRedisClient creates a new RedisClient
 func NewRedisClient(url string, logger *utils.Logger) *RedisClient {
 	opt, err := redis.ParseURL(url)
 	if err != nil {
-		logger.Errorf("Invalid Redis URL: %v", err)
+		logger.Error(
+			"invalid redis url",
+			zap.String("url", url),
+			zap.Error(err),
+		)
 		return nil
 	}
 
@@ -32,29 +37,48 @@ func NewRedisClient(url string, logger *utils.Logger) *RedisClient {
 // Connect establishes connection with retry logic
 func (r *RedisClient) Connect(maxRetries int, retryDelay time.Duration) error {
 	var err error
+
 	for i := 0; i < maxRetries; i++ {
-		_, err = r.Ping(context.Background()).Result() // Call embedded Client method
+		_, err = r.Ping(context.Background()).Result()
 		if err == nil {
 			r.isReady = true
-			r.logger.Infof("Connected to Redis")
+			r.logger.Info(
+				"connected to redis",
+				zap.Int("attempt", i+1),
+			)
 			return nil
 		}
-		r.logger.Errorf("Failed to connect to Redis (attempt %d): %v", i+1, err)
+
+		r.logger.Error(
+			"failed to connect to redis",
+			zap.Int("attempt", i+1),
+			zap.Int("max_retries", maxRetries),
+			zap.Duration("retry_delay", retryDelay),
+			zap.Error(err),
+		)
+
 		time.Sleep(retryDelay)
 		retryDelay *= 2
 	}
-	return errors.New("max retries reached, could not connect to Redis")
+
+	return errors.New("max retries reached, could not connect to redis")
 }
 
 // Close closes the Redis connection
 func (r *RedisClient) Close() error {
-	if r.Client != nil {
-		if err := r.Client.Close(); err != nil {
-			r.logger.Errorf("Error closing Redis connection: %v", err)
-			return err
-		}
-		r.logger.Infof("Redis connection closed")
+	if r.Client == nil {
+		return nil
 	}
+
+	if err := r.Client.Close(); err != nil {
+		r.logger.Error(
+			"failed to close redis connection",
+			zap.Error(err),
+		)
+		return err
+	}
+
+	r.logger.Info("redis connection closed")
 	return nil
 }
 
@@ -63,24 +87,57 @@ func (r *RedisClient) IsReady() bool {
 	return r.isReady
 }
 
-// Wrapper methods (optional, for convenience)
+// Wrapper methods
+
 func (r *RedisClient) GetValue(ctx context.Context, key string) (string, error) {
 	if !r.isReady {
-		return "", errors.New("Redis is not connected")
+		return "", errors.New("redis is not connected")
 	}
-	return r.Get(ctx, key).Result() // Call embedded Get
+
+	val, err := r.Get(ctx, key).Result()
+	if err != nil {
+		r.logger.Error(
+			"failed to get redis key",
+			zap.String("key", key),
+			zap.Error(err),
+		)
+		return "", err
+	}
+
+	return val, nil
 }
 
 func (r *RedisClient) SetValue(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
 	if !r.isReady {
-		return errors.New("Redis is not connected")
+		return errors.New("redis is not connected")
 	}
-	return r.Set(ctx, key, value, expiration).Err()
+
+	if err := r.Set(ctx, key, value, expiration).Err(); err != nil {
+		r.logger.Error(
+			"failed to set redis key",
+			zap.String("key", key),
+			zap.Duration("expiration", expiration),
+			zap.Error(err),
+		)
+		return err
+	}
+
+	return nil
 }
 
 func (r *RedisClient) DeleteKey(ctx context.Context, key string) error {
 	if !r.isReady {
-		return errors.New("Redis is not connected")
+		return errors.New("redis is not connected")
 	}
-	return r.Del(ctx, key).Err()
+
+	if err := r.Del(ctx, key).Err(); err != nil {
+		r.logger.Error(
+			"failed to delete redis key",
+			zap.String("key", key),
+			zap.Error(err),
+		)
+		return err
+	}
+
+	return nil
 }

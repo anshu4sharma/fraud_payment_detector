@@ -2,49 +2,64 @@ package utils
 
 import (
 	"fmt"
-	"log"
 	"os"
-	"time"
-)
+	"path/filepath"
 
-const (
-	colorReset  = "\033[0m"
-	colorRed    = "\033[31m"
-	colorGreen  = "\033[32m"
-	colorYellow = "\033[33m"
-	colorBlue   = "\033[34m"
-	colorCyan   = "\033[36m"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 type Logger struct {
-	logger *log.Logger
+	log *zap.Logger
 }
 
-func NewLogger() *Logger {
-	return &Logger{
-		logger: log.New(os.Stdout, "", 0),
+func NewLogger(env, serviceName string) *Logger {
+	var cfg zap.Config
+
+	if env == "prod" {
+		cfg = zap.NewProductionConfig()
+	} else {
+		cfg = zap.NewDevelopmentConfig()
 	}
+
+	cfg.Encoding = "json"
+	cfg.EncoderConfig.TimeKey = "ts"
+	cfg.EncoderConfig.EncodeTime = zapcore.RFC3339TimeEncoder
+	cfg.EncoderConfig.LevelKey = "level"
+	cfg.EncoderConfig.MessageKey = "msg"
+	cfg.EncoderConfig.CallerKey = "caller"
+	cfg.EncoderConfig.EncodeLevel = zapcore.LowercaseLevelEncoder
+	cfg.EncoderConfig.EncodeCaller = zapcore.ShortCallerEncoder
+
+	outputs := []string{"stdout"}
+	errorOutputs := []string{"stderr"}
+
+	if logDir := os.Getenv("LOG_DIR"); logDir != "" {
+		if err := os.MkdirAll(logDir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to create log dir: %v\n", err)
+		} else {
+			logFile := filepath.Join(logDir, serviceName+".log")
+			outputs = append(outputs, logFile)
+			errorOutputs = append(errorOutputs, logFile)
+		}
+	}
+
+	cfg.OutputPaths = outputs
+	cfg.ErrorOutputPaths = errorOutputs
+	cfg.InitialFields = map[string]any{
+		"service": serviceName,
+	}
+
+	logger, err := cfg.Build()
+	if err != nil {
+		panic(err)
+	}
+
+	return &Logger{log: logger}
 }
 
-func (l *Logger) Infof(format string, v ...interface{}) {
-	l.print(colorGreen, "INFO", format, v...)
-}
-
-func (l *Logger) Warnf(format string, v ...interface{}) {
-	l.print(colorYellow, "WARN", format, v...)
-}
-
-func (l *Logger) Errorf(format string, v ...interface{}) {
-	l.print(colorRed, "ERROR", format, v...)
-}
-
-func (l *Logger) Debugf(format string, v ...interface{}) {
-	l.print(colorCyan, "DEBUG", format, v...)
-}
-
-func (l *Logger) print(color, level, format string, v ...interface{}) {
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	msg := fmt.Sprintf(format, v...)
-	output := fmt.Sprintf("%s[%s] [%s] %s%s", color, timestamp, level, msg, colorReset)
-	l.logger.Println(output)
-}
+func (l *Logger) Info(msg string, fields ...zap.Field)  { l.log.Info(msg, fields...) }
+func (l *Logger) Warn(msg string, fields ...zap.Field)  { l.log.Warn(msg, fields...) }
+func (l *Logger) Error(msg string, fields ...zap.Field) { l.log.Error(msg, fields...) }
+func (l *Logger) Debug(msg string, fields ...zap.Field) { l.log.Debug(msg, fields...) }
+func (l *Logger) Sync() error                           { return l.log.Sync() }

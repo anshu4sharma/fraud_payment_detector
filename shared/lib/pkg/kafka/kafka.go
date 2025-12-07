@@ -7,6 +7,7 @@ import (
 
 	"github.com/anshu4sharma/fraud_payment_detector/shared/lib/pkg/utils"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"go.uber.org/zap"
 )
 
 type KafkaClient struct {
@@ -30,17 +31,30 @@ func (k *KafkaClient) ConnectProducer(brokers string) error {
 		"batch.num.messages": 10000,
 	})
 	if err != nil {
+		k.logger.Error(
+			"failed to create kafka producer",
+			zap.String("brokers", brokers),
+			zap.Error(err),
+		)
 		return err
 	}
 
 	k.producer = p
 	k.ready = true
-	k.logger.Infof("Kafka producer initialized")
+
+	k.logger.Info(
+		"kafka producer initialized",
+		zap.String("brokers", brokers),
+	)
 
 	go func() {
 		for e := range p.Events() {
 			if msg, ok := e.(*kafka.Message); ok && msg.TopicPartition.Error != nil {
-				k.logger.Errorf("Produce error: %v", msg.TopicPartition.Error)
+				k.logger.Error(
+					"kafka produce error",
+					zap.String("topic", *msg.TopicPartition.Topic),
+					zap.Error(msg.TopicPartition.Error),
+				)
 			}
 		}
 	}()
@@ -59,16 +73,33 @@ func (k *KafkaClient) ConnectConsumer(brokers, groupID string, topics []string) 
 		"go.events.channel.enable": false,
 	})
 	if err != nil {
+		k.logger.Error(
+			"failed to create kafka consumer",
+			zap.String("brokers", brokers),
+			zap.String("group_id", groupID),
+			zap.Error(err),
+		)
 		return err
 	}
 
 	if err := c.SubscribeTopics(topics, nil); err != nil {
+		k.logger.Error(
+			"failed to subscribe to kafka topics",
+			zap.Strings("topics", topics),
+			zap.Error(err),
+		)
 		return err
 	}
 
 	k.consumer = c
 	k.ready = true
-	k.logger.Infof("Kafka consumer subscribed to %v", topics)
+
+	k.logger.Info(
+		"kafka consumer subscribed",
+		zap.String("group_id", groupID),
+		zap.Strings("topics", topics),
+	)
+
 	return nil
 }
 
@@ -77,11 +108,25 @@ func (k *KafkaClient) Produce(topic, key string, value []byte) error {
 		return errors.New("producer not ready")
 	}
 
-	return k.producer.Produce(&kafka.Message{
-		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
-		Key:            []byte(key),
-		Value:          value,
+	err := k.producer.Produce(&kafka.Message{
+		TopicPartition: kafka.TopicPartition{
+			Topic:     &topic,
+			Partition: kafka.PartitionAny,
+		},
+		Key:   []byte(key),
+		Value: value,
 	}, nil)
+
+	if err != nil {
+		k.logger.Error(
+			"failed to produce kafka message",
+			zap.String("topic", topic),
+			zap.String("key", key),
+			zap.Error(err),
+		)
+	}
+
+	return err
 }
 
 func (k *KafkaClient) Consume(ctx context.Context, handler func(string, []byte)) error {
@@ -92,15 +137,25 @@ func (k *KafkaClient) Consume(ctx context.Context, handler func(string, []byte))
 	for {
 		select {
 		case <-ctx.Done():
-			k.logger.Infof("Consumer context canceled")
+			k.logger.Info("kafka consumer context canceled")
 			return nil
 		default:
 			msg, err := k.consumer.ReadMessage(200 * time.Millisecond)
 			if err != nil {
 				continue
 			}
+
 			handler(string(msg.Key), msg.Value)
-			_, _ = k.consumer.CommitMessage(msg)
+
+			if _, err := k.consumer.CommitMessage(msg); err != nil {
+				k.logger.Error(
+					"failed to commit kafka message",
+					zap.String("topic", *msg.TopicPartition.Topic),
+					zap.Int32("partition", msg.TopicPartition.Partition),
+					zap.Int64("offset", int64(msg.TopicPartition.Offset)),
+					zap.Error(err),
+				)
+			}
 		}
 	}
 }
@@ -109,12 +164,14 @@ func (k *KafkaClient) Close() {
 	if k.producer != nil {
 		k.producer.Flush(5000)
 		k.producer.Close()
-		k.logger.Infof("Producer closed")
+		k.logger.Info("kafka producer closed")
 	}
+
 	if k.consumer != nil {
 		k.consumer.Close()
-		k.logger.Infof("Consumer closed")
+		k.logger.Info("kafka consumer closed")
 	}
+
 	k.ready = false
 }
 

@@ -1,4 +1,7 @@
 services:
+  # =========================
+  # Kafka
+  # =========================
   kafka:
     image: apache/kafka:4.0.0
     container_name: kafka
@@ -21,7 +24,9 @@ services:
     networks:
       - app_network
 
+  # =========================
   # Kafka UI
+  # =========================
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
@@ -32,20 +37,83 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
     networks:
       - app_network
+    depends_on:
+      - kafka
 
+  # =========================
+  # Redis
+  # =========================
   redis:
     image: redis:latest
     container_name: redis
     ports:
       - "6379:6379"
-    networks:
-      - app_network
     volumes:
       - redis-data:/data
+    networks:
+      - app_network
+
+  # =========================
+  # Loki (Log Storage)
+  # =========================
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki-data:/loki
+      - ./loki-local-config.yaml:/etc/loki/local-config.yaml:ro
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - app_network
+
+  # =========================
+  # Promtail (Log Shipper)
+  # =========================
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: promtail
+    volumes:
+      # Mount both service log directories
+      - ./services/fraud_detection/logs:/logs/fraud_detection:ro
+      - ./services/payment_service/logs:/logs/payment_service:ro
+      - ./promtail.yaml:/etc/promtail/promtail.yaml:ro
+    command: -config.file=/etc/promtail/promtail.yaml
+    depends_on:
+      - loki
+    networks:
+      - app_network
+
+  # =========================
+  # Grafana (Log UI) - Auto-configured
+  # =========================
+  grafana:
+    image: grafana/grafana:10.0.0
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      # Provisioning configurations - auto-setup datasource and dashboards
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./fraud-detection-dashboard.json:/etc/grafana/provisioning/dashboards/fraud-detection-dashboard.json:ro
+    depends_on:
+      - loki
+    networks:
+      - app_network
 
 volumes:
   kafka-data:
   redis-data:
+  loki-data:
+  grafana-data:
 
 networks:
   app_network:

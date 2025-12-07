@@ -5,6 +5,7 @@ import (
 	"github.com/anshu4sharma/fraud_payment_detector/shared/structs"
 	"github.com/anshu4sharma/services/payment_service/internal/services"
 	"github.com/gofiber/fiber/v2"
+	"go.uber.org/zap"
 )
 
 type PaymentHandler struct {
@@ -13,7 +14,10 @@ type PaymentHandler struct {
 }
 
 func NewPaymentHandler(service *services.PaymentService, logger *utils.Logger) *PaymentHandler {
-	return &PaymentHandler{service: service, logger: logger}
+	return &PaymentHandler{
+		service: service,
+		logger:  logger,
+	}
 }
 
 func (h *PaymentHandler) InsertPayment(c *fiber.Ctx) error {
@@ -21,12 +25,24 @@ func (h *PaymentHandler) InsertPayment(c *fiber.Ctx) error {
 
 	_, err := h.service.InsertPayment(c, req)
 	if err != nil {
-		h.logger.Errorf("Failed to insert payment: %v", err)
+		h.logger.Error(
+			"failed to insert payment",
+			zap.String("payment_id", req.ID),
+			zap.String("user_id", req.UserId),
+			zap.Error(err),
+		)
+
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error":   true,
 			"message": "Failed to insert payment",
 		})
 	}
+
+	h.logger.Info(
+		"payment inserted successfully",
+		zap.String("payment_id", req.ID),
+		zap.String("user_id", req.UserId),
+	)
 
 	return c.JSON(fiber.Map{
 		"error": false,

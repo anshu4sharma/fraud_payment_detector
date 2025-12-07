@@ -11,7 +11,9 @@ type Config struct {
 	ServerPort   string
 	RedisURL     string
 	KafkaBrokers string
+	Env          string
 	KafkaGroupID string
+	LOG_FILE     string
 }
 
 func Load() *Config {
@@ -22,6 +24,8 @@ func Load() *Config {
 
 	return &Config{
 		ServerPort:   getEnv("SERVER_PORT", ":8080"),
+		Env:          getEnv("Env", "prod"),
+		LOG_FILE:     getEnv("LOG_FILE", ""),
 		RedisURL:     getEnv("REDIS_URL", "redis://localhost:6379"),
 		KafkaBrokers: getEnv("KAFKA_BROKERS", "localhost:9092"),
 		KafkaGroupID: getEnv("KAFKA_GROUP_ID", "fraud-detector-group"),
